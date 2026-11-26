@@ -126,6 +126,8 @@ pub struct Allowance {
     pub at: i64,
     pub weekly: Option<f64>,
     pub five_hour: Option<f64>,
+    pub weekly_reset_at: Option<i64>,
+    pub five_hour_reset_at: Option<i64>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -174,6 +176,8 @@ impl Usage {
             },
             weekly_remaining: self.allowance.weekly,
             five_hour_remaining: self.allowance.five_hour,
+            weekly_reset_at: self.allowance.weekly_reset_at,
+            five_hour_reset_at: self.allowance.five_hour_reset_at,
             ..Default::default()
         }
     }
@@ -214,10 +218,17 @@ fn parse_allowance(payload: &Value, at: i64) -> Allowance {
         let (Some(used), Some(minutes)) = (float(w, "used_percent"), int(w, "window_minutes")) else { continue };
         let remaining = ((100.0 - used) * 10.0).round() / 10.0;
         let remaining = remaining.clamp(0.0, 100.0);
+        let reset_at = w.get("resets_at").or_else(|| w.get("resetsAt")).and_then(|v| match v {
+            Value::Number(n) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)).filter(|&x| x > 0).map(|x| if x < 100_000_000_000 { x * 1000 } else { x }),
+            Value::String(s) => s.trim().parse::<i64>().ok().filter(|&x| x > 0).map(|x| if x < 100_000_000_000 { x * 1000 } else { x }).or_else(|| time::parse_iso(s)),
+            _ => None,
+        });
         if minutes >= 10_080 {
             allowance.weekly = Some(remaining);
+            allowance.weekly_reset_at = reset_at;
         } else if (240..=360).contains(&minutes) {
             allowance.five_hour = Some(remaining);
+            allowance.five_hour_reset_at = reset_at;
         }
     }
     allowance
@@ -311,6 +322,8 @@ pub struct Hydration {
     pub turn_open: bool,
     pub weekly: Option<(f64, i64)>,
     pub five_hour: Option<(f64, i64)>,
+    pub weekly_reset_at: Option<(i64, i64)>,
+    pub five_hour_reset_at: Option<(i64, i64)>,
     pub length: u64,
 }
 
@@ -341,6 +354,12 @@ pub fn hydrate(path: &Path, now: i64) -> std::io::Result<Hydration> {
                 }
             }
             Record::Usage(usage) => {
+                if h.weekly_reset_at.is_none() {
+                    h.weekly_reset_at = usage.allowance.weekly_reset_at.map(|r| (r, usage.allowance.at));
+                }
+                if h.five_hour_reset_at.is_none() {
+                    h.five_hour_reset_at = usage.allowance.five_hour_reset_at.map(|r| (r, usage.allowance.at));
+                }
                 if h.weekly.is_none() {
                     h.weekly = usage.allowance.weekly.map(|v| (v, usage.allowance.at));
                 }
@@ -357,6 +376,12 @@ pub fn hydrate(path: &Path, now: i64) -> std::io::Result<Hydration> {
                 }
                 if h.five_hour.is_none() {
                     h.five_hour = a.five_hour.map(|v| (v, a.at));
+                }
+                if h.weekly_reset_at.is_none() {
+                    h.weekly_reset_at = a.weekly_reset_at.map(|r| (r, a.at));
+                }
+                if h.five_hour_reset_at.is_none() {
+                    h.five_hour_reset_at = a.five_hour_reset_at.map(|r| (r, a.at));
                 }
             }
             _ => {}
