@@ -91,7 +91,7 @@ pub fn source_label(t: &TaskView, loc: &Locale) -> String {
         _ if t.client == "cli" || t.profile == crate::engine::codex::DEEPSEEK_PROFILE => {
             if t.provider.eq_ignore_ascii_case("deepseek") || t.profile == crate::engine::codex::DEEPSEEK_PROFILE {
                 loc.get("sourceCliDeepSeek").into()
-            } else if t.provider.trim().is_empty() || t.provider.eq_ignore_ascii_case("openai") {
+            } else if t.provider.trim().is_empty() || t.provider.eq_ignore_ascii_case("openai") || t.provider.eq_ignore_ascii_case("openai-http") {
                 loc.get("sourceCliOpenAI").into()
             } else {
                 format!("{} · {}", loc.get("sourceCli"), t.provider.trim().chars().take(18).collect::<String>())
