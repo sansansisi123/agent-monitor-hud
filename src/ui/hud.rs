@@ -644,18 +644,7 @@ fn quota_sources(c: &Ctx, d: &crate::model::Snapshot, agy: Option<&crate::engine
             note,
         });
     }
-    sources.retain(|source| tasks.iter().any(|t| {
-        if !matches!(t.status, "active" | "waiting" | "listening") {
-            return false;
-        }
-        if source.source == Source::Antigravity {
-            t.source == Source::Antigravity && t.snapshot.as_ref().is_none_or(|s| {
-                s.model.is_empty() || s.model.to_ascii_lowercase().starts_with("gemini")
-            })
-        } else {
-            t.source.quota_source(&t.provider, t.profile) == Some(source.source)
-        }
-    }));
+    let _ = tasks;
     sources
 }
 
