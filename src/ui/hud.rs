@@ -593,6 +593,33 @@ struct QuotaSource {
     note: String,
 }
 
+fn format_reset_tip(c: &Ctx, short5: &str, short_week: &str, five_reset: Option<i64>, week_reset: Option<i64>) -> String {
+    let mut parts = Vec::new();
+    for (label, reset_at) in [(short5, five_reset), (short_week, week_reset)] {
+        if let Some(at) = reset_at {
+            let local = time::local_iso(at);
+            let when = local.get(5..16).unwrap_or(&local).replace('T', " ");
+            let base = format!("{label} {}", c.sloc.get("quotaResetsAt").replace("{0}", &when));
+            let rem_min = (at - c.now).max(0) / 60_000;
+            let countdown = if rem_min <= 0 {
+                "即将重置".to_string()
+            } else if rem_min >= 24 * 60 {
+                let d = rem_min / (24 * 60);
+                let h = (rem_min % (24 * 60)) / 60;
+                if h > 0 { format!("剩 {d}d{h}h") } else { format!("剩 {d}d") }
+            } else if rem_min >= 60 {
+                let h = rem_min / 60;
+                let m = rem_min % 60;
+                if m > 0 { format!("剩 {h}h{m:02}m") } else { format!("剩 {h}h") }
+            } else {
+                format!("剩 {rem_min}m")
+            };
+            parts.push(format!("{base} ({countdown})"));
+        }
+    }
+    parts.join(" · ")
+}
+
 fn quota_sources(c: &Ctx, d: &crate::model::Snapshot, agy: Option<&crate::engine::antigravity_quota::Reading>, tasks: &[TaskView]) -> Vec<QuotaSource> {
     let s = c.s;
     let short5 = c.loc.get("quotaShortFiveHour").to_string();
@@ -609,7 +636,7 @@ fn quota_sources(c: &Ctx, d: &crate::model::Snapshot, agy: Option<&crate::engine
                 (short_week.clone(), c.loc.get("weeklyRemaining").to_string(), d.weekly_remaining, s.field("weeklyRemaining")),
             ],
             balance: None,
-            note: String::new(),
+            note: format_reset_tip(c, &short5, &short_week, d.five_hour_reset_at, d.weekly_reset_at),
         },
         QuotaSource {
             source: Source::Dsh,
@@ -622,15 +649,7 @@ fn quota_sources(c: &Ctx, d: &crate::model::Snapshot, agy: Option<&crate::engine
         },
     ];
     if let Some(q) = agy {
-        let updated = c.sloc.get("quotaUpdatedAt").replace("{0}", &time::local_hm(q.at));
-        let mut note = format!("Gemini · {updated}");
-        for (label, window) in [(&short5, q.five_hour), (&short_week, q.weekly)] {
-            if let Some(at) = window.and_then(|w| w.reset_at) {
-                let local = time::local_iso(at);
-                let when = local.get(5..16).unwrap_or(&local).replace('T', " ");
-                note.push_str(&format!(" · {label} {}", c.sloc.get("quotaResetsAt").replace("{0}", &when)));
-            }
-        }
+        let note = format_reset_tip(c, &short5, &short_week, q.five_hour.and_then(|w| w.reset_at), q.weekly.and_then(|w| w.reset_at));
         sources.push(QuotaSource {
             source: Source::Antigravity,
             name: agent_short_name(Source::Antigravity),
@@ -729,7 +748,16 @@ fn quota_items(c: &Ctx, d: &crate::model::Snapshot, agy: Option<&crate::engine::
             item.padding = scale_th(density(&s.list_density).metric_padding, k);
             item.min_h = 0.0;
         }
-        items.push(item.va(Align::Center).tip(tip.join(" · ")).child(content));
+        let tip_text = if matches!(source.source, Source::Codex | Source::Antigravity) {
+            source.note.clone()
+        } else {
+            tip.join(" · ")
+        };
+        let mut built = item.va(Align::Center).child(content);
+        if !tip_text.is_empty() {
+            built = built.tip(tip_text);
+        }
+        items.push(built);
     }
     items
 }
@@ -836,8 +864,19 @@ fn metrics_panel(c: &Ctx, m: &MainModel) -> El {
                 El::text(text, font(&s.theme.font_family, s.font_size, 600), solid(&s.foreground, "#FFFFFFFF", Role::Primary, s, "idle", false))
                     .va(Align::Center),
             );
-            if !view.paused && view.account.antigravity.is_some() {
-                for item in quota_items(c, &crate::model::Snapshot::default(), view.account.antigravity.as_ref(), &view.tasks) {
+            if !view.paused && (view.account.antigravity.is_some()
+                || view.account.codex_five_hour_remaining.is_some()
+                || view.account.codex_weekly_remaining.is_some())
+            {
+                let empty_snap = crate::model::Snapshot {
+                    five_hour_remaining: view.account.codex_five_hour_remaining,
+                    weekly_remaining: view.account.codex_weekly_remaining,
+                    five_hour_reset_at: view.account.codex_five_hour_reset_at,
+                    weekly_reset_at: view.account.codex_weekly_reset_at,
+                    allowance_at: view.account.codex_at,
+                    ..Default::default()
+                };
+                for item in quota_items(c, &empty_snap, view.account.antigravity.as_ref(), &view.tasks) {
                     wrap.push(item);
                 }
             }
