@@ -45,7 +45,7 @@ impl Source {
     pub fn quota_source(self, provider: &str, profile: &str) -> Option<Source> {
         match self {
             Source::Codex if profile == codex::DEEPSEEK_PROFILE || provider.eq_ignore_ascii_case("deepseek") => Some(Source::Dsh),
-            Source::Codex if provider.is_empty() || provider.eq_ignore_ascii_case("openai") => Some(Source::Codex),
+            Source::Codex if provider.is_empty() || provider.eq_ignore_ascii_case("openai") || provider.eq_ignore_ascii_case("openai-http") => Some(Source::Codex),
             Source::Codex | Source::Antigravity => None,
             Source::Dsh => Some(Source::Dsh),
         }
