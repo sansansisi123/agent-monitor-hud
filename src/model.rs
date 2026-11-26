@@ -33,6 +33,10 @@ pub struct Snapshot {
     pub allowance_at: Option<i64>,
     pub weekly_remaining: Option<f64>,
     pub five_hour_remaining: Option<f64>,
+    
+    pub weekly_reset_at: Option<i64>,
+    pub five_hour_reset_at: Option<i64>,
+
     /// DeepSeek account balance (`¥23.50`), its amount and reading time.
     pub dsh_balance: Option<String>,
     pub dsh_balance_value: Option<f64>,
