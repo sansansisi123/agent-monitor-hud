@@ -130,6 +130,8 @@ pub struct Task {
     pub waiting_since: i64,
     weekly: Option<(f64, i64)>,
     five_hour: Option<(f64, i64)>,
+    weekly_reset_at: Option<(i64, i64)>,
+    five_hour_reset_at: Option<(i64, i64)>,
     reader: jsonl::IncrementalReader,
     dsh: Option<Box<dsh::Projection>>,
     antigravity: Option<Box<antigravity::Reader>>,
@@ -183,6 +185,8 @@ impl Task {
             waiting_since: MIN,
             weekly: None,
             five_hour: None,
+            weekly_reset_at: None,
+            five_hour_reset_at: None,
             reader: jsonl::IncrementalReader::default(),
             dsh: None,
             antigravity: None,
@@ -271,6 +275,8 @@ pub struct View {
 pub struct AccountView {
     pub codex_five_hour_remaining: Option<f64>,
     pub codex_weekly_remaining: Option<f64>,
+    pub codex_five_hour_reset_at: Option<i64>,
+    pub codex_weekly_reset_at: Option<i64>,
     pub codex_at: Option<i64>,
     pub antigravity: Option<antigravity_quota::Reading>,
     pub dsh_balance: Option<String>,
@@ -539,7 +545,10 @@ impl Engine {
         let (codex_five, codex_week, codex_at) = codex_allowance(self.tasks.values(), self.official_allowance.as_ref());
         AccountView {
             codex_five_hour_remaining: codex_five,
+        let (codex_five_reset, codex_week_reset) = codex_resets(self.tasks.values(), self.official_allowance.as_ref());
             codex_weekly_remaining: codex_week,
+            codex_five_hour_reset_at: codex_five_reset,
+            codex_weekly_reset_at: codex_week_reset,
             codex_at,
             antigravity: self.antigravity_quota.filter(|q| self.settings.sources.antigravity && now - q.at < 180_000),
             dsh_balance: self.dsh_balance.as_ref().map(|(b, _)| dsh_balance::format(b)),
@@ -704,6 +713,8 @@ impl Engine {
                 }
                 task.weekly = h.weekly;
                 task.five_hour = h.five_hour;
+                task.weekly_reset_at = h.weekly_reset_at;
+                task.five_hour_reset_at = h.five_hour_reset_at;
                 task.turn_open = h.turn_open;
                 task.speed = speed::hydrate_codex(&task.path, &task.model, now);
                 if let Some(usage) = &h.usage {
@@ -1334,7 +1345,10 @@ impl Engine {
         let (five, weekly, at) = codex_allowance(self.tasks.values(), self.official_allowance.as_ref());
         display.weekly_remaining = weekly;
         display.five_hour_remaining = five;
+        display.weekly_reset_at = weekly_reset;
+        display.five_hour_reset_at = five_reset;
         display.allowance_at = at;
+        let (five_reset, weekly_reset) = codex_resets(self.tasks.values(), self.official_allowance.as_ref());
         if let Some((balance, at)) = &self.dsh_balance {
             display.dsh_balance = Some(dsh_balance::format(balance));
             display.dsh_balance_value = Some(balance.total);
@@ -1448,6 +1462,32 @@ fn codex_allowance<'a>(tasks: impl Iterator<Item = &'a Task>, official: Option<&
         }
     }
     (five.map(|f| f.0), weekly.map(|w| w.0), weekly.map(|w| w.1).max(five.map(|f| f.1)))
+}
+
+fn codex_resets<'a>(tasks: impl Iterator<Item = &'a Task>, official: Option<&allowance::Official>) -> (Option<i64>, Option<i64>) {
+    let mut weekly: Option<(i64, i64)> = None;
+    let mut five: Option<(i64, i64)> = None;
+    for task in tasks.filter(|t| t.source.quota_source(&t.provider, t.profile) == Some(Source::Codex)) {
+        if let Some(value) = task.weekly_reset_at {
+            if weekly.is_none_or(|(_, at)| value.1 > at) {
+                weekly = Some(value);
+            }
+        }
+        if let Some(value) = task.five_hour_reset_at {
+            if five.is_none_or(|(_, at)| value.1 > at) {
+                five = Some(value);
+            }
+        }
+    }
+    if let Some(official) = official {
+        if let Some(value) = official.weekly_reset_at.filter(|_| weekly.is_none_or(|(_, at)| official.at >= at)) {
+            weekly = Some((value, official.at));
+        }
+        if let Some(value) = official.five_hour_reset_at.filter(|_| five.is_none_or(|(_, at)| official.at >= at)) {
+            five = Some((value, official.at));
+        }
+    }
+    (five.map(|f| f.0), weekly.map(|w| w.0))
 }
 
 #[cfg(test)]
@@ -1596,6 +1636,12 @@ fn apply_codex(task: &mut Task, record: codex::Record, now: i64, settings: &Sett
             if let Some(f) = a.five_hour {
                 task.five_hour = Some((f, a.at));
             }
+            if let Some(r) = a.weekly_reset_at {
+                task.weekly_reset_at = Some((r, a.at));
+            }
+            if let Some(r) = a.five_hour_reset_at {
+                task.five_hour_reset_at = Some((r, a.at));
+            }
             if let Some(snapshot) = task.snapshot.as_mut() {
                 apply_allowance(snapshot, task.weekly, task.five_hour);
             }
@@ -1606,6 +1652,12 @@ fn apply_codex(task: &mut Task, record: codex::Record, now: i64, settings: &Sett
             }
             if let Some(f) = usage.allowance.five_hour {
                 task.five_hour = Some((f, usage.allowance.at));
+            }
+            if let Some(r) = usage.allowance.weekly_reset_at {
+                task.weekly_reset_at = Some((r, usage.allowance.at));
+            }
+            if let Some(r) = usage.allowance.five_hour_reset_at {
+                task.five_hour_reset_at = Some((r, usage.allowance.at));
             }
             let mut snapshot = usage.to_snapshot();
             snapshot.model = task.model.clone();
