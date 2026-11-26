@@ -10,6 +10,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up MSVC and Windows SDK environment
+        uses: ilammy/msvc-dev-cmd@v1
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@master
         with:
