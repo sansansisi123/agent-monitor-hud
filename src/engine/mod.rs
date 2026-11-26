@@ -543,9 +543,11 @@ impl Engine {
 
     fn account_view(&self, now: i64) -> AccountView {
         let (codex_five, codex_week, codex_at) = codex_allowance(self.tasks.values(), self.official_allowance.as_ref());
+        
+        let (codex_five_reset, codex_week_reset) = codex_resets(self.tasks.values(), self.official_allowance.as_ref());
+
         AccountView {
             codex_five_hour_remaining: codex_five,
-        let (codex_five_reset, codex_week_reset) = codex_resets(self.tasks.values(), self.official_allowance.as_ref());
             codex_weekly_remaining: codex_week,
             codex_five_hour_reset_at: codex_five_reset,
             codex_weekly_reset_at: codex_week_reset,
@@ -1343,12 +1345,14 @@ impl Engine {
         };
         // Account readings are shared with settings, independent of task visibility.
         let (five, weekly, at) = codex_allowance(self.tasks.values(), self.official_allowance.as_ref());
+        
+        let (five_reset, weekly_reset) = codex_resets(self.tasks.values(), self.official_allowance.as_ref());
+
         display.weekly_remaining = weekly;
         display.five_hour_remaining = five;
         display.weekly_reset_at = weekly_reset;
         display.five_hour_reset_at = five_reset;
         display.allowance_at = at;
-        let (five_reset, weekly_reset) = codex_resets(self.tasks.values(), self.official_allowance.as_ref());
         if let Some((balance, at)) = &self.dsh_balance {
             display.dsh_balance = Some(dsh_balance::format(balance));
             display.dsh_balance_value = Some(balance.total);
