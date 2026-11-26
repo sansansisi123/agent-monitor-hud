@@ -15,6 +15,12 @@ pub struct Official {
     pub at: i64,
     pub weekly: Option<f64>,
     pub five_hour: Option<f64>,
+    
+pub weekly_reset_at: Option<i64>,
+    
+pub five_hour_reset_at: Option<i64>,
+
+
 }
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -97,7 +103,7 @@ fn parse(root: &Value) -> Option<Official> {
     if limits.get("limitId").and_then(Value::as_str).is_some_and(|id| !id.is_empty() && !id.eq_ignore_ascii_case("codex")) {
         return None;
     }
-    let mut official = Official { at: crate::util::time::now_ms(), weekly: None, five_hour: None };
+    let mut official = Official { at: crate::util::time::now_ms(), weekly: None, five_hour: None, weekly_reset_at: None, five_hour_reset_at: None };
     for key in ["primary", "secondary"] {
         let Some(window) = limits.get(key).filter(|w| w.is_object()) else { continue };
         let (Some(used), Some(minutes)) = (
@@ -107,10 +113,17 @@ fn parse(root: &Value) -> Option<Official> {
             continue;
         };
         let remaining = (100.0 - used).clamp(0.0, 100.0);
+        let reset_at = window.get("resetsAt").or_else(|| window.get("resets_at")).and_then(|v| match v {
+            Value::Number(n) => n.as_i64().or_else(|| n.as_f64().map(|f| f as i64)).filter(|&x| x > 0).map(|x| if x < 100_000_000_000 { x * 1000 } else { x }),
+            Value::String(s) => s.trim().parse::<i64>().ok().filter(|&x| x > 0).map(|x| if x < 100_000_000_000 { x * 1000 } else { x }).or_else(|| crate::util::time::parse_iso(s)),
+            _ => None,
+        });
         if (240..=360).contains(&minutes) {
             official.five_hour = Some(remaining);
+            official.five_hour_reset_at = reset_at;
         } else if minutes >= 10_080 {
             official.weekly = Some(remaining);
+            official.weekly_reset_at = reset_at;
         }
     }
     (official.weekly.is_some() || official.five_hour.is_some()).then_some(official)
