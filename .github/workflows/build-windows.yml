@@ -1,0 +1,24 @@
+name: Build AgentMonitorHUD Windows
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.95.0
+          targets: x86_64-pc-windows-msvc
+      - name: Build release binary
+        run: cargo build --release
+      - name: Upload AgentMonitorHUD.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: AgentMonitorHUD-windows-x64
+          path: target/release/AgentMonitorHUD.exe
